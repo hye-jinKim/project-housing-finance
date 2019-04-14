@@ -1,6 +1,7 @@
 package com.kakaoPay.housingFinance.member.service;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.doReturn;
@@ -62,7 +63,7 @@ public class JwtServiceTest {
 	public void reissueToken_success() throws RestApiException {
 		doReturn(true).when(memberRepository).existsById(ID);
 
-		String result = service.reissueToken("Bearer " + jwt);
+		String result = service.reissueToken("Bearer Token " + jwt);
 		assertThat(getId(result), is(ID));
 
 		verify(memberRepository, times(1)).existsById(ID);
@@ -82,7 +83,7 @@ public class JwtServiceTest {
 	public void reissueToken_fail_invalid_id() {
 		doReturn(false).when(memberRepository).existsById("nothing");
 		try {
-			service.reissueToken("Bearer " + makeJwt("nothing", null));
+			service.reissueToken("Bearer Token " + makeJwt("nothing", null));
 		} catch (RestApiException e) {
 			assertThat(e.getHttpstatus(), is(HttpStatus.UNAUTHORIZED));
 		}
@@ -92,18 +93,18 @@ public class JwtServiceTest {
 	@Test
 	public void reissueToken_fail_expired_token() {
 		try {
-			service.reissueToken("Bearer " + makeJwt("nothing", 1));
+			service.reissueToken("Bearer Token " + makeJwt("nothing", 1));
 		} catch (RestApiException e) {
 			assertThat(e.getHttpstatus(), is(HttpStatus.BAD_REQUEST));
-			assertThat(MapUtils.getString(e.getResponse(), "detail"), is("token is expired"));
+			assertThat(MapUtils.getString(e.getResponse(), "detail"), is("token is expired, please login"));
 		}
 	}
 
 	@Test
 	public void reissueToken_fail_internal_server_error() {
 		try {
-			doReturn(null).when(service).getIdWithValidCheck("Bearer " + jwt, true);
-			service.reissueToken("Bearer " + jwt);
+			doReturn(null).when(service).getIdWithValidCheck(jwt);
+			service.reissueToken("Bearer Token " + jwt);
 		} catch (RestApiException e) {
 			assertThat(e.getHttpstatus(), is(HttpStatus.INTERNAL_SERVER_ERROR));
 		}
@@ -114,9 +115,9 @@ public class JwtServiceTest {
 		doReturn(true).when(memberRepository).existsById(ID);
 		doReturn(ID).when(memberRepository).findByIdAndToken(ID, jwt);
 
-		boolean result = service.isUsable(jwt);
+		String result = service.isUsable("Bearer " + jwt);
 
-		assertThat(result, is(true));
+		assertThat(result, is(""));
 		verify(memberRepository, times(1)).existsById(ID);
 		verify(memberRepository, times(1)).findByIdAndToken(ID, jwt);
 	}
@@ -124,8 +125,8 @@ public class JwtServiceTest {
 	@Test
 	public void isUsable_fail_expired_token() {
 		String oldToken = makeJwt(ID, 1);
-		boolean result = service.isUsable(oldToken);
-		assertThat(result, is(false));
+		String result = service.isUsable("Bearer " + oldToken);
+		assertThat(result, is(notNullValue()));
 		
 		verify(memberRepository, times(0)).findByIdAndToken(ID, oldToken);
 
@@ -138,8 +139,8 @@ public class JwtServiceTest {
 		String oldToken = makeJwt(id, null);
 		doReturn(false).when(memberRepository).existsById(id);
 
-		boolean result = service.isUsable(oldToken);
-		assertThat(result, is(false));
+		String result = service.isUsable("Bearer " + oldToken);
+		assertThat(result, is(notNullValue()));
 		verify(memberRepository, times(1)).existsById(id);
 		
 		// blank id
@@ -147,8 +148,8 @@ public class JwtServiceTest {
 		oldToken = makeJwt(id, null);
 		doReturn(false).when(memberRepository).existsById(id);
 
-		result = service.isUsable(oldToken);
-		assertThat(result, is(false));
+		result = service.isUsable("Bearer " + oldToken);
+		assertThat(result, is(notNullValue()));
 		verify(memberRepository, times(1)).existsById(id);
 	}
 

@@ -7,6 +7,7 @@ import java.util.Map;
 import javax.crypto.spec.SecretKeySpec;
 import javax.xml.bind.DatatypeConverter;
 
+import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -55,14 +56,16 @@ public class JwtService {
 
 	public String reissueToken(String oldToken) throws RestApiException {
 		try {
-			// 토큰이 Bearer type이 아니라면 실패
-			if (!isBearerType(oldToken)) {
-				throw new RestApiException(HttpStatus.BAD_REQUEST, "token is not bearer type");
+			// 토큰이 Bearer Token type이 아니라면 실패
+			if (!isRefreshType(oldToken)) {
+				throw new RestApiException(HttpStatus.BAD_REQUEST, "Header has not 'Bearer Token'");
 			}
-			
+
+			oldToken = getTokenOnlyForRefresh(oldToken);
+
 			// 토큰 유효성 검증 후, 신규 토큰 발급
 			// 잘못된 토큰은 error를 내려준다.
-			return createToken(getIdWithValidCheck(oldToken, true).toString());
+			return createToken(getIdWithValidCheck(oldToken).toString());
 		} catch (ExpiredJwtException e) {
 			throw new RestApiException(HttpStatus.BAD_REQUEST, "token is expired, please login");
 		} catch (RestApiException e) {
@@ -74,24 +77,29 @@ public class JwtService {
 		}
 	}
 
-	public boolean isUsable(String jwt) {
+	public String isUsable(String jwt) {
 		try {
+			if (!isBearerType(jwt)) {
+				return "is not Bearer Type";
+			}
+
 			// 토큰이 유효한지 검증한 후, id 조회
-			String id = String.valueOf(getIdWithValidCheck(jwt, false));
-			return StringUtils.isNotBlank(memberRepository.findByIdAndToken(id, jwt));
+			jwt = getTokenOnly(jwt);
+			String id = String.valueOf(getIdWithValidCheck(jwt));
+			return StringUtils.isNotBlank(memberRepository.findByIdAndToken(id, jwt)) ? "" : "not exist";
+		} catch (RestApiException e) {
+			return MapUtils.getString(e.getResponse(), "detail");
 		} catch (Exception e) {
 			e.printStackTrace();
-			return false;
+			return "fail";
 		}
 	}
 
 	@VisibleForTesting
-	Object getIdWithValidCheck(String oldToken, boolean wannaRemoveBearer) throws RestApiException {
-		// Bearer type일 경우, Bearer 제거
-		String token = wannaRemoveBearer ? removeBearer(oldToken) : oldToken;
-		Claims claims = Jwts.parser().setSigningKey(generateKey()).parseClaimsJws(token).getBody();
+	Object getIdWithValidCheck(String oldToken) throws RestApiException {
+		Claims claims = Jwts.parser().setSigningKey(generateKey()).parseClaimsJws(oldToken).getBody();
 		Object id = claims.get("id");
-		
+
 		// id 유효성 체크
 		validId(id);
 		return id;
@@ -108,9 +116,14 @@ public class JwtService {
 		}
 	}
 
-	private String removeBearer(String token) {
+	private String getTokenOnly(String token) {
 		String[] tokens = StringUtils.split(token, " ");
 		return tokens[1];
+	}
+
+	private String getTokenOnlyForRefresh(String token) {
+		String[] tokens = StringUtils.split(token, " ");
+		return tokens[2];
 	}
 
 	private boolean isBearerType(String token) {
@@ -122,8 +135,18 @@ public class JwtService {
 		return StringUtils.equals(tokens[0], "Bearer");
 	}
 
+	private boolean isRefreshType(String token) {
+		String[] tokens = StringUtils.split(token, " ");
+		if (tokens.length < 3) {
+			return false;
+		}
+
+		return StringUtils.equals(tokens[0], "Bearer") && StringUtils.equals(tokens[1], "Token");
+	}
+
 	/**
 	 * HS256 Key 생성
+	 * 
 	 * @return
 	 */
 	private Key generateKey() {
